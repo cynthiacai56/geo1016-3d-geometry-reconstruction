@@ -26,8 +26,17 @@
 #include "matrix_algo.h"
 #include <easy3d/optimizer/optimizer_lm.h>
 
+// -- added by the team --
+#include <random>
+
 
 using namespace easy3d;
+
+// declare the functions that follow the triangulation function -- created by the team
+Matrix33 transf_matrix(const std::vector<Vector2D>& im_points);
+//Vector2D calc_centroid(const std::vector<Vector2D>& im_points);
+
+
 
 
 /**
@@ -69,78 +78,215 @@ bool Triangulation::triangulation(
                  "\t    - do NOT include the 'build' directory (which contains the intermediate files in a build step).\n"
                  "\t    - make sure your code compiles and can reproduce your results without ANY modification.\n\n" << std::flush;
 
-    /// Below are a few examples showing some useful data structures and APIs.
-
-    /// define a 2D vector/point
-    Vector2D b(1.1, 2.2);
-
-    /// define a 3D vector/point
-    Vector3D a(1.1, 2.2, 3.3);
-
-    /// get the Cartesian coordinates of a (a is treated as Homogeneous coordinates)
-    Vector2D p = a.cartesian();
-
-    /// get the Homogeneous coordinates of p
-    Vector3D q = p.homogeneous();
-
-    /// define a 3 by 3 matrix (and all elements initialized to 0.0)
-    Matrix33 A;
-
-    /// define and initialize a 3 by 3 matrix
-    Matrix33 T(1.1, 2.2, 3.3,
-               0, 2.2, 3.3,
-               0, 0, 1);
-
-    /// define and initialize a 3 by 4 matrix
-    Matrix34 M(1.1, 2.2, 3.3, 0,
-               0, 2.2, 3.3, 1,
-               0, 0, 1, 1);
-
-    /// set first row by a vector
-    M.set_row(0, Vector4D(1.1, 2.2, 3.3, 4.4));
-
-    /// set second column by a vector
-    M.set_column(1, Vector3D(5.5, 5.5, 5.5));
-
-    /// define a 15 by 9 matrix (and all elements initialized to 0.0)
-    Matrix W(15, 9, 0.0);
-    /// set the first row by a 9-dimensional vector
-    W.set_row(0, {0, 1, 2, 3, 4, 5, 6, 7, 8}); // {....} is equivalent to a std::vector<double>
-
-    /// get the number of rows.
-    int num_rows = W.rows();
-
-    /// get the number of columns.
-    int num_cols = W.cols();
-
-    /// get the the element at row 1 and column 2
-    double value = W(1, 2);
-
-    /// get the last column of a matrix
-    Vector last_column = W.get_column(W.cols() - 1);
-
-    /// define a 3 by 3 identity matrix
-    Matrix33 I = Matrix::identity(3, 3, 1.0);
-
-    /// matrix-vector product
-    Vector3D v = M * Vector4D(1, 2, 3, 4); // M is 3 by 4
-
-    ///For more functions of Matrix and Vector, please refer to 'matrix.h' and 'vector.h'
-
-    // TODO: delete all above example code in your final submission
+//    /// Below are a few examples showing some useful data structures and APIs.
+//
+//    /// define a 2D vector/point
+//    Vector2D b(1.1, 2.2);
+//
+//    /// define a 3D vector/point
+//    Vector3D a(1.1, 2.2, 3.3);
+//
+//    /// get the Cartesian coordinates of a (a is treated as Homogeneous coordinates)
+//    Vector2D p = a.cartesian();
+//
+//    /// get the Homogeneous coordinates of p
+//    Vector3D q = p.homogeneous();
+//
+//    /// define a 3 by 3 matrix (and all elements initialized to 0.0)
+//    Matrix33 A;
+//
+//    /// define and initialize a 3 by 3 matrix
+//    Matrix33 T(1.1, 2.2, 3.3,
+//               0, 2.2, 3.3,
+//               0, 0, 1);
+//
+//    /// define and initialize a 3 by 4 matrix
+//    Matrix34 M(1.1, 2.2, 3.3, 0,
+//               0, 2.2, 3.3, 1,
+//               0, 0, 1, 1);
+//
+//    /// set first row by a vector
+//    M.set_row(0, Vector4D(1.1, 2.2, 3.3, 4.4));
+//
+//    /// set second column by a vector
+//    M.set_column(1, Vector3D(5.5, 5.5, 5.5));
+//
+//    /// define a 15 by 9 matrix (and all elements initialized to 0.0)
+//    Matrix W(15, 9, 0.0);
+//    /// set the first row by a 9-dimensional vector
+//    W.set_row(0, {0, 1, 2, 3, 4, 5, 6, 7, 8}); // {....} is equivalent to a std::vector<double>
+//
+//    /// get the number of rows.
+//    int num_rows = W.rows();
+//
+//    /// get the number of columns.
+//    int num_cols = W.cols();
+//
+//    /// get the the element at row 1 and column 2
+//    double value = W(1, 2);
+//
+//    /// get the last column of a matrix
+//    Vector last_column = W.get_column(W.cols() - 1);
+//
+//    /// define a 3 by 3 identity matrix
+//    Matrix33 I = Matrix::identity(3, 3, 1.0);
+//
+//    /// matrix-vector product
+//    Vector3D v = M * Vector4D(1, 2, 3, 4); // M is 3 by 4
+//
+//    ///For more functions of Matrix and Vector, please refer to 'matrix.h' and 'vector.h'
+//
+//    // TODO: delete all above example code in your final submission
 
     //--------------------------------------------------------------------------------------------------------------
     // implementation starts ...
 
     // TODO: check if the input is valid (always good because you never known how others will call your function).
 
+
     // TODO: Estimate relative pose of two views. This can be subdivided into
     //      - estimate the fundamental matrix F;
     //      - compute the essential matrix E;
     //      - recover rotation R and t.
 
+    // to be deleted
+    // TODO step 1: Estimate the fundamental matrix F;
+    // we apply a translation and a scaling on the image coordinates qi = Tpi, qi'=T'pi'.
+
+    // 1. For every image we calculate the origin of the new coordinate system located at the centroid of the image points.
+    Matrix33 T0 = transf_matrix(points_0);
+    std::cout << "T0: " << T0 << std::endl;
+    Matrix33 T1 = transf_matrix(points_0);
+
+    // create the structures to hold the NEW NORMALIZED POINTS.
+    std::vector<Vector2D> norm_points_0; /// input: 2D image points in the 1st image.
+    std::vector<Vector2D> norm_points_1;
+
+    // make the new point qi = T*Pi -- first image
+    for (const auto& p0: points_0){
+        Vector3D q0_homo = T0 * p0.homogeneous()   ;
+        Vector2D q0 = q0_homo.cartesian();
+        norm_points_0.emplace_back(q0);
+    }
+    // make the new point qi = T*Pi -- second image
+    for (const auto& p1: points_1){
+        Vector3D q1_homo = T1 * p1.homogeneous()   ;
+        Vector2D q1 = q1_homo.cartesian();
+        norm_points_1.emplace_back(q1);
+    }
+
+    /*** ------ Using the Normalized coordinates we will compute the new Fundamentral matrix Fq with the regular 8-point algorithm
+    including the rank-2 approximation. However, the matrix Fq is the fundamental matrix for the normalized coordinates.
+     We will need to denormalise it, F = ...  ------ ***/
+
+    // Estimate the Fundamental Matrix for Normalized coords Fq, given two images. 8 POINT ALGORITHM
+    // QUESTION FOR LIANG : We can only know the Fundamental matrix UP TO A SCALE. ?????????? --> HOW DOES IT AFFECT?
+    // Construct W matrix with 24 points
+    int m = points_0.size(), n = 9;
+    Matrix W(m, n, 0.0);
+
+    for (int i=0; i < m; i++){
+        // select the elements
+        Vector2D q1 = norm_points_1[i];
+        Vector2D q0 = norm_points_0[i];
+        W.set_row(i, {q0.x()*q1.x(), q0.x()*q1.x(), q1.x(), q0.x()*q0.y(), q0.y()*q1.y(), q1.y(), q0.x(), q0.y(), 1});
+    }
+    //std::cout << "W: " << W << std::endl;
+    //Compute the SVD decomposition of W
+    Matrix U(m, m, 0.0);
+    Matrix S(m, n, 0.0); // diagonal matrix that contains the singular values in descending order.
+    Matrix V(n, n, 0.0); // stores the corresponding singular vectors. We choose the singular vector p12 which minimises the error.
+    svd_decompose(W, U, S, V);
+
+    // PRINTS
+    //std::cout << "U: \n" << U << std::endl;
+    //std::cout << "S: \n" << S << std::endl;
+    //std::cout << "V: \n" << V << std::endl;
+
+    // take the last column of V as the solution for f
+    Vector fs = V.get_column(V.cols()-1);
+    //std::cout << "fs: \n" << fs << std::endl;
+
+    Matrix33 Fq ;
+    Fq.set_row(0, {fs[0], fs[1], fs[2]});
+    Fq.set_row(1, {fs[3], fs[4], fs[5]});
+    Fq.set_row(2, {fs[6], fs[7], fs[8]});
+
+    //std::cout << "Fq: \n" << Fq << std::endl;
+
+    // Enforce Rank 2 constraint by again using SVD decomposition
+    Matrix Uq(3, 3, 0.0);
+    Matrix Sq(3, 3, 0.0);
+    Matrix Vq(3, 3, 0.0);
+    svd_decompose(Fq, Uq, Sq, Vq);
+
+    //std::cout << "Uq: \n" << Uq << std::endl;
+    //std::cout << "Sq: \n" << Sq << std::endl;
+    //std::cout << "Vq: \n" << Vq << std::endl;
+
+    // enforce rank 2 --> manipulate the diagonal S
+    Sq[2][2] = 0;
+    // recompute Fq after enforcement
+    Fq = Uq * Sq * Vq.transpose();
+    //std::cout << "Fq: \n" << Fq << std::endl;
+
+//    // TODO: ????????? Intermediate step --- Find the closest rank-2 matrix --- (ΤΙ ΕΙΝΑΙ ΑΥΤΟ;;;;)
+//    // ΝΑ ΔΩ ΤΙ ΕΙΝΑΙ . ΑΝ ΤΟ ΕΧΩ ΚΑΝΕΙ Ή ΑΝ ΧΡΕΙΑΖΕΤΑΙ ΚΑΤΙ ΠΑΡΑΠΑΝΩ .
+//
+//    // Last step: DENORMALIZATION Fq to be F. F = T′TFqT
+//    Matrix33 F = T1.transpose() * Fq * T0;
+//    std::cout << "F: \n" << F << std::endl;
+//
+//    // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
+//    // so probably take the last element and divide everything with that
+//    F = F / F[2][2];
+//    std::cout << "F: \n" << F << std::endl;
+//    //std::cout << "Norm_F: " <<  norm(F) << std::endl;
+//    //std::cout << "Norm_F: " <<  F[0][0] + F[0][1] + F[0][2] + F[1][0] + F[1][1] + F[1][2] + F[2][0] + F[2][1] + F[2][2] << std::endl;
+//
+//
+//    // to be deleted
+//    // TODO step 2: compute the essential matrix E; E = KTFK
+//
+//    // consruct the K matrix --> same for both cameras
+//    Matrix33 K(fx, 0, cx, 0, fy, cy, 0, 0, 1);
+//    //std::cout << "K: \n" << K << std::endl;
+//
+//    Matrix33 E = K.transpose() * F * K;  // 5 degrees of freedom --> it encodes R, and t (extrinsics).
+//    std::cout << "E: \n" << E << std::endl;
+//
+//    // Decomposition of E into R and t.
+//    // we define two matrices that we will use in the decomposition of E --> W and Z
+//    Matrix33 We(0,-1,0,1,0,0,0,0,1);
+//    Matrix33 Ze(0,1,0,-1,0,0,0,0,0);
+//
+//    Matrix Ue(3, 3, 0.0);
+//    Matrix Se(3, 3, 0.0);
+//    Matrix Ve(3, 3, 0.0);
+//    svd_decompose(E, Ue, Se, Ve);
+//
+//    std::cout << "Ue: \n" << Ue << std::endl;
+//    std::cout << "Se: \n" << Se << std::endl;
+//    std::cout << "Ve: \n" << Ve << std::endl;
+
+
+
+
+
+
+
+
+    // to be deleted
+    // TODO step 3: recover rotation R and t.
+
+
+
+
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+
+
+
 
     // TODO: Don't forget to
     //          - write your recovered 3D points into 'points_3d' (so the viewer can visualize the 3D points for you);
@@ -154,3 +300,53 @@ bool Triangulation::triangulation(
     //          - encountered failure in any step.
     return points_3d.size() > 0;
 }
+
+// functions created by the team
+
+// function that returns the centroid of a vector that holds image points
+//Vector2D calc_centroid(const std::vector<Vector2D>& im_points){
+//    unsigned int n0 = im_points.size(); // divide the sum with n and get the centroid
+//    double p0x = 0, p0y = 0, c0x, c0y;
+//    for (auto p0: im_points){
+//        p0x = p0x + p0.x();
+//        p0y = p0y + p0.y();
+//    }
+//    // The origin of our previous CRS is in the left corner so every point will be positive
+//    // So the translation vector will be negative
+//    c0x = - p0x/n0;
+//    c0y = - p0y/n0;
+//
+//    // translation vector
+//    return {c0x,c0y};
+//}
+
+
+// function that returns the centroid of a vector that holds image points
+Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
+    unsigned int n0 = im_points.size(); // divide the sum with n and get the centroid
+    double p0x = 0, p0y = 0, c0x, c0y;
+    for (auto p0: im_points){
+        p0x = p0x + p0.x();
+        p0y = p0y + p0.y();
+    }
+    // The origin of our previous CRS is in the left corner so every point will be positive
+    // So the translation vector will be negative
+    c0x = p0x/n0;
+    c0y = p0y/n0;
+
+    // translation vector
+    Vector2D t0{-c0x,-c0y};
+    // set up the scaling factor --> sqrt(2)/average_dist of the points to the new CRS origin
+    double s0, adist0 = 0;
+    for (auto p0: im_points){
+        adist0 = adist0 + sqrt(pow((p0.x() - c0x), 2) + pow((p0.y() - c0y), 2));
+    }
+    s0 = sqrt(2)/(adist0/n0);
+
+    // prepare the Transformation matrix (T) for the image
+    return {s0, 0, t0.x(), 0, s0, t0.y(), 0, 0, 1};
+}
+
+
+
+
