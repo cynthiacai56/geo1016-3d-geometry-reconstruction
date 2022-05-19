@@ -34,8 +34,10 @@ using namespace easy3d;
 
 // declare the functions that follow the triangulation function -- created by the team
 Matrix33 transf_matrix(const std::vector<Vector2D>& im_points);
-//Vector2D calc_centroid(const std::vector<Vector2D>& im_points);
-
+Matrix34 construct_Rt(const Matrix33& R, const Vector3D& t);
+int count_positive_z(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt);
+std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt, const Matrix34& M0);
+int count_positive_z(const std::vector<Vector3D>& points3d);
 
 
 
@@ -155,7 +157,7 @@ bool Triangulation::triangulation(
 
     // 1. For every image we calculate the origin of the new coordinate system located at the centroid of the image points.
     Matrix33 T0 = transf_matrix(points_0);
-    std::cout << "T0: " << T0 << std::endl;
+//    std::cout << "T0: " << T0 << std::endl;
     Matrix33 T1 = transf_matrix(points_0);
 
     // create the structures to hold the NEW NORMALIZED POINTS.
@@ -230,60 +232,107 @@ bool Triangulation::triangulation(
     Fq = Uq * Sq * Vq.transpose();
     //std::cout << "Fq: \n" << Fq << std::endl;
 
-//    // TODO: ????????? Intermediate step --- Find the closest rank-2 matrix --- (ΤΙ ΕΙΝΑΙ ΑΥΤΟ;;;;)
-//    // ΝΑ ΔΩ ΤΙ ΕΙΝΑΙ . ΑΝ ΤΟ ΕΧΩ ΚΑΝΕΙ Ή ΑΝ ΧΡΕΙΑΖΕΤΑΙ ΚΑΤΙ ΠΑΡΑΠΑΝΩ .
-//
-//    // Last step: DENORMALIZATION Fq to be F. F = T′TFqT
-//    Matrix33 F = T1.transpose() * Fq * T0;
+
+    // Last step: DENORMALIZATION Fq to be F. F = T′TFqT
+    Matrix33 F = T1.transpose() * Fq * T0;
+    //std::cout << "F: \n" << F << std::endl;
+
+    // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
+    // so probably take the last element and divide everything with that
+    F = F / F[2][2];
 //    std::cout << "F: \n" << F << std::endl;
-//
-//    // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
-//    // so probably take the last element and divide everything with that
-//    F = F / F[2][2];
-//    std::cout << "F: \n" << F << std::endl;
-//    //std::cout << "Norm_F: " <<  norm(F) << std::endl;
-//    //std::cout << "Norm_F: " <<  F[0][0] + F[0][1] + F[0][2] + F[1][0] + F[1][1] + F[1][2] + F[2][0] + F[2][1] + F[2][2] << std::endl;
-//
-//
-//    // to be deleted
-//    // TODO step 2: compute the essential matrix E; E = KTFK
-//
-//    // consruct the K matrix --> same for both cameras
-//    Matrix33 K(fx, 0, cx, 0, fy, cy, 0, 0, 1);
-//    //std::cout << "K: \n" << K << std::endl;
-//
-//    Matrix33 E = K.transpose() * F * K;  // 5 degrees of freedom --> it encodes R, and t (extrinsics).
+
+
+    // TODO step 2: compute the essential matrix E; E = KTFK
+
+    // consruct the K matrix --> same for both cameras
+    Matrix33 K(fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    //std::cout << "K: \n" << K << std::endl;
+
+    Matrix33 E = K.transpose() * F * K;  // 5 degrees of freedom --> it encodes R, and t (extrinsics).
 //    std::cout << "E: \n" << E << std::endl;
-//
-//    // Decomposition of E into R and t.
-//    // we define two matrices that we will use in the decomposition of E --> W and Z
-//    Matrix33 We(0,-1,0,1,0,0,0,0,1);
-//    Matrix33 Ze(0,1,0,-1,0,0,0,0,0);
-//
-//    Matrix Ue(3, 3, 0.0);
-//    Matrix Se(3, 3, 0.0);
-//    Matrix Ve(3, 3, 0.0);
-//    svd_decompose(E, Ue, Se, Ve);
-//
+
+    // Decomposition of E into R and t.
+    // we define two matrices that we will use in the decomposition of E --> W and Z
+    Matrix33 We(0,-1,0,1,0,0,0,0,1);
+    Matrix33 Ze(0,1,0,-1,0,0,0,0,0);
+
+    // get the matrices ready for the decomposition of E
+    Matrix Ue(3, 3, 0.0);
+    Matrix Se(3, 3, 0.0);
+    Matrix Ve(3, 3, 0.0);
+    svd_decompose(E, Ue, Se, Ve);
 //    std::cout << "Ue: \n" << Ue << std::endl;
 //    std::cout << "Se: \n" << Se << std::endl;
 //    std::cout << "Ve: \n" << Ve << std::endl;
 
 
-
-
-
-
-
-
     // to be deleted
     // TODO step 3: recover rotation R and t.
+    Matrix33 tr = Ue * Ze * Ue.transpose();
+    Vector3D tr1{-tr[1][2], tr[0][2], -tr[0][1]};
+    Vector3D tr2 = -tr1;
+    // INTERMEDIATE CHECK for t: we can find directly t vector from the U Matrix. t = +- u3 (third column of U)
+    Vector3D tr_adele = Ue.get_column(2);
 
-
+    Matrix33 R1 = Ue * We * Ve.transpose();
+    // TODO: check for the determinant of R --> maybe you neglect one this way
+    if (!(determinant(R1) < 1.00001 && determinant(R1) > (1 - 0.00001))){
+        std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
+        exit(20);
+    }
+    Matrix33 R2 = Ue * We.transpose() * Ve.transpose();
+    if (!(determinant(R2) < 1.00001 && determinant(R2) > (1 - 0.00001))){
+        std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
+        exit(20);
+    }
 
 
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
+
+    // create Rt for all possible combinations of R and t.
+    Matrix34 R1t1 = construct_Rt(R1, tr1);
+    Matrix34 R1t2 = construct_Rt(R1, tr2);
+    Matrix34 R2t1 = construct_Rt(R2, tr1);
+    Matrix34 R2t2 = construct_Rt(R2, tr2);
+    // mutliply K with Rt and find the 3D points
+    Matrix34 KR1t1 = K * R1t1;
+    Matrix34 KR1t2 = K * R1t2;
+    Matrix34 KR2t1 = K * R2t1;
+    Matrix34 KR2t2 = K * R2t2;
+
+    //create projection matrix M for the first image
+    Matrix33 I = identity(3, 1);
+    Vector3D ti{0,0,0};
+    Matrix34 M0 = K * construct_Rt(I, ti);
+//    std::cout << "M0: " << M0 << std::endl;
+
+    std::vector<Vector3D> points_3d_1 = reconstruct3Dpoints(points_0, points_1, KR1t1,M0);
+    std::vector<Vector3D> points_3d_2 = reconstruct3Dpoints(points_0, points_1, KR1t2,M0);
+    std::vector<Vector3D> points_3d_3 = reconstruct3Dpoints(points_0, points_1, KR2t1,M0);
+    std::vector<Vector3D> points_3d_4 = reconstruct3Dpoints(points_0, points_1, KR2t2,M0);
+
+    // call the function to calculate the number of points in front of both images
+    int c1 = count_positive_z(points_3d_1);
+    int c2 = count_positive_z(points_3d_2);
+    int c3 = count_positive_z(points_3d_3);
+    int c4 = count_positive_z(points_3d_4);
+
+    // printing statements to check the number of positive points
+//    std::cout << "c1: " << c1 << std::endl;
+//    std::cout << "c2: " << c2 << std::endl;
+//    std::cout << "c3: " << c3 << std::endl;
+//    std::cout << "c4: " << c4 << std::endl;
+
+    // decide on the correct R and t and save it in the variables of the functions.
+    if (c1 > c2 && c1 > c3 && c1 > c4){R = R1;t = tr1;points_3d = points_3d_1;}
+    if (c2 > c1 && c2 > c3 && c2 > c4){R = R1;t = tr2;points_3d = points_3d_2;}
+    if (c3 > c2 && c3 > c1 && c3 > c4){R = R2;t = tr1;points_3d = points_3d_3;}
+    if (c4 > c2 && c4 > c3 && c4 > c1){R = R2;t = tr2;points_3d = points_3d_4;}
+
+
+
 
 
 
@@ -298,28 +347,11 @@ bool Triangulation::triangulation(
     //          - function not implemented yet;
     //          - input not valid (e.g., not enough points, point numbers don't match);
     //          - encountered failure in any step.
-    return points_3d.size() > 0;
+//    return points_3d.size() > 0;
+    return true;
 }
 
 // functions created by the team
-
-// function that returns the centroid of a vector that holds image points
-//Vector2D calc_centroid(const std::vector<Vector2D>& im_points){
-//    unsigned int n0 = im_points.size(); // divide the sum with n and get the centroid
-//    double p0x = 0, p0y = 0, c0x, c0y;
-//    for (auto p0: im_points){
-//        p0x = p0x + p0.x();
-//        p0y = p0y + p0.y();
-//    }
-//    // The origin of our previous CRS is in the left corner so every point will be positive
-//    // So the translation vector will be negative
-//    c0x = - p0x/n0;
-//    c0y = - p0y/n0;
-//
-//    // translation vector
-//    return {c0x,c0y};
-//}
-
 
 // function that returns the centroid of a vector that holds image points
 Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
@@ -347,6 +379,53 @@ Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
     return {s0, 0, t0.x(), 0, s0, t0.y(), 0, 0, 1};
 }
 
+Matrix34 construct_Rt(const Matrix33& R, const Vector3D& t){
+    Matrix34 Rt;
+    Rt.set_column(0,R.get_column(0));
+    Rt.set_column(1,R.get_column(1));
+    Rt.set_column(2,R.get_column(2));
+    Rt.set_column(3, t);
+//    std::cout<< "Rt: " << Rt << std::endl;
+    return Rt;
+}
 
 
+std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt, const Matrix34& M0){
+    // construct Matrix A
+    std::vector<Vector3D> points3d;
+    const Matrix34& M1=KRt;
+    int count = 0;
+    for (int i=0; i< img0.size(); i++) {
+        // compute the Matrix A
+        Matrix44 A;
+        A.set_column(0, (img0[i].x() * M0.get_row(2) - M0.get_row(0)));
+        A.set_column(0, (img0[i].y() * M0.get_row(2) - M0.get_row(1)));
+        A.set_column(0, (img1[i].x() * M1.get_row(2) - M1.get_row(0)));
+        A.set_column(0, (img1[i].x() * M1.get_row(2) - M1.get_row(1)));
+        Matrix44 U, S, V;
+        Matrix Ua(4, 4, 0.0);
+        Matrix Sa(4, 4, 0.0);
+        Matrix Va(4, 4, 0.0);
+        svd_decompose(A, Ua, Sa, Va);
+        Vector4D P0 = Va.get_column(3);
+        Vector3D p0_3d = P0.cartesian();
+        points3d.emplace_back(p0_3d);
+    }
+    return points3d;
+}
 
+int count_positive_z(const std::vector<Vector3D>& points3d){
+    int count = 0;
+    for (auto p: points3d){
+        if (p.z() > 0){
+//            // if positive z coord, go and check if the same point in the other image has also a positive coord and add 1 to the counter
+//            Vector4D X1 = inverse(KRt) * img1[i].homogeneous();
+//            Vector3D p1_3d = X1.cartesian();
+//            if (p1_3d.z() > 0){
+//                // add 1 to the counter if the corresponding points have positive coords
+            count++;
+//            }
+        }
+    }
+    return count;
+}
