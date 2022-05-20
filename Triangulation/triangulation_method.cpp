@@ -80,66 +80,6 @@ bool Triangulation::triangulation(
                  "\t    - do NOT include the 'build' directory (which contains the intermediate files in a build step).\n"
                  "\t    - make sure your code compiles and can reproduce your results without ANY modification.\n\n" << std::flush;
 
-//    /// Below are a few examples showing some useful data structures and APIs.
-//
-//    /// define a 2D vector/point
-//    Vector2D b(1.1, 2.2);
-//
-//    /// define a 3D vector/point
-//    Vector3D a(1.1, 2.2, 3.3);
-//
-//    /// get the Cartesian coordinates of a (a is treated as Homogeneous coordinates)
-//    Vector2D p = a.cartesian();
-//
-//    /// get the Homogeneous coordinates of p
-//    Vector3D q = p.homogeneous();
-//
-//    /// define a 3 by 3 matrix (and all elements initialized to 0.0)
-//    Matrix33 A;
-//
-//    /// define and initialize a 3 by 3 matrix
-//    Matrix33 T(1.1, 2.2, 3.3,
-//               0, 2.2, 3.3,
-//               0, 0, 1);
-//
-//    /// define and initialize a 3 by 4 matrix
-//    Matrix34 M(1.1, 2.2, 3.3, 0,
-//               0, 2.2, 3.3, 1,
-//               0, 0, 1, 1);
-//
-//    /// set first row by a vector
-//    M.set_row(0, Vector4D(1.1, 2.2, 3.3, 4.4));
-//
-//    /// set second column by a vector
-//    M.set_column(1, Vector3D(5.5, 5.5, 5.5));
-//
-//    /// define a 15 by 9 matrix (and all elements initialized to 0.0)
-//    Matrix W(15, 9, 0.0);
-//    /// set the first row by a 9-dimensional vector
-//    W.set_row(0, {0, 1, 2, 3, 4, 5, 6, 7, 8}); // {....} is equivalent to a std::vector<double>
-//
-//    /// get the number of rows.
-//    int num_rows = W.rows();
-//
-//    /// get the number of columns.
-//    int num_cols = W.cols();
-//
-//    /// get the the element at row 1 and column 2
-//    double value = W(1, 2);
-//
-//    /// get the last column of a matrix
-//    Vector last_column = W.get_column(W.cols() - 1);
-//
-//    /// define a 3 by 3 identity matrix
-//    Matrix33 I = Matrix::identity(3, 3, 1.0);
-//
-//    /// matrix-vector product
-//    Vector3D v = M * Vector4D(1, 2, 3, 4); // M is 3 by 4
-//
-//    ///For more functions of Matrix and Vector, please refer to 'matrix.h' and 'vector.h'
-//
-//    // TODO: delete all above example code in your final submission
-
     //--------------------------------------------------------------------------------------------------------------
     // implementation starts ...
 
@@ -155,16 +95,19 @@ bool Triangulation::triangulation(
     // TODO step 1: Estimate the fundamental matrix F;
     // we apply a translation and a scaling on the image coordinates qi = Tpi, qi'=T'pi'.
 
-    // 1. For every image we calculate the origin of the new coordinate system located at the centroid of the image points.
+    // We call the function that returns the Transformation matrix
+    // The Transformation matrix includes the translation and scaling parameters.
+    // 1. Translation: For every image we calculate the origin of the new coordinate system located at the centroid of the image points.
+    // 2. Scaling: We scale the points with a scale factor of sqrt(2)/mean_distance
     Matrix33 T0 = transf_matrix(points_0);
-//    std::cout << "T0: " << T0 << std::endl;
-    Matrix33 T1 = transf_matrix(points_0);
+    Matrix33 T1 = transf_matrix(points_1);
+    //    std::cout << "T0: " << T0 << std::endl;
 
-    // create the structures to hold the NEW NORMALIZED POINTS.
+    // create the structures to hold the NORMALIZED POINTS.
     std::vector<Vector2D> norm_points_0; /// input: 2D image points in the 1st image.
     std::vector<Vector2D> norm_points_1;
 
-    // make the new point qi = T*Pi -- first image
+    // create the new point qi = T*Pi -- first image
     for (const auto& p0: points_0){
         Vector3D q0_homo = T0 * p0.homogeneous()   ;
         Vector2D q0 = q0_homo.cartesian();
@@ -182,7 +125,7 @@ bool Triangulation::triangulation(
      We will need to denormalise it, F = ...  ------ ***/
 
     // Estimate the Fundamental Matrix for Normalized coords Fq, given two images. 8 POINT ALGORITHM
-    // QUESTION FOR LIANG : We can only know the Fundamental matrix UP TO A SCALE. ?????????? --> HOW DOES IT AFFECT?
+    // TODO: QUESTION FOR LIANG : We can only know the Fundamental matrix UP TO A SCALE. ?????????? --> HOW DOES IT AFFECT?
     // Construct W matrix with 24 points
     int m = points_0.size(), n = 9;
     Matrix W(m, n, 0.0);
@@ -238,14 +181,14 @@ bool Triangulation::triangulation(
     //std::cout << "F: \n" << F << std::endl;
 
     // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
-    // so probably take the last element and divide everything with that
+    // we take the last element and divide everything with that
     F = F / F[2][2];
 //    std::cout << "F: \n" << F << std::endl;
 
 
     // TODO step 2: compute the essential matrix E; E = KTFK
 
-    // consruct the K matrix --> same for both cameras
+    // consruct the K matrix --> same for both cameras, but no skew parameter
     Matrix33 K(fx, 0, cx, 0, fy, cy, 0, 0, 1);
     //std::cout << "K: \n" << K << std::endl;
 
@@ -269,18 +212,23 @@ bool Triangulation::triangulation(
 
     // to be deleted
     // TODO step 3: recover rotation R and t.
-    Matrix33 tr = Ue * Ze * Ue.transpose();
-    Vector3D tr1{-tr[1][2], tr[0][2], -tr[0][1]};
+    // Step 3.1: Recover t first (translation vector) as the third column of U
+    Vector3D tr1 = Ue.get_column(2);
     Vector3D tr2 = -tr1;
     // INTERMEDIATE CHECK for t: we can find directly t vector from the U Matrix. t = +- u3 (third column of U)
-    Vector3D tr_adele = Ue.get_column(2);
+    // alternative computation of tr (translation vector)
+//    Matrix33 tr = Ue * Ze * Ue.transpose();
+//    Vector3D tr1{-tr[1][2], tr[0][2], -tr[0][1]};
 
+    // Step 3.2: Recover the Rotation Matrix R:
+    // recover the first possible R. R1.
     Matrix33 R1 = Ue * We * Ve.transpose();
-    // TODO: check for the determinant of R --> maybe you neglect one this way
+    // We check that the determinant of R = 1 (within a tiny threshold)
     if (!(determinant(R1) < 1.00001 && determinant(R1) > (1 - 0.00001))){
         std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
         exit(20);
     }
+    // compute the alternative for R. R2.
     Matrix33 R2 = Ue * We.transpose() * Ve.transpose();
     if (!(determinant(R2) < 1.00001 && determinant(R2) > (1 - 0.00001))){
         std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
@@ -291,27 +239,28 @@ bool Triangulation::triangulation(
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
 
-    // create Rt for all possible combinations of R and t.
-    Matrix34 R1t1 = construct_Rt(R1, tr1);
-    Matrix34 R1t2 = construct_Rt(R1, tr2);
-    Matrix34 R2t1 = construct_Rt(R2, tr1);
-    Matrix34 R2t2 = construct_Rt(R2, tr2);
-    // mutliply K with Rt and find the 3D points
-    Matrix34 KR1t1 = K * R1t1;
-    Matrix34 KR1t2 = K * R1t2;
-    Matrix34 KR2t1 = K * R2t1;
-    Matrix34 KR2t2 = K * R2t2;
+    // create Rt for all possible combinations of R and t and multiply with K to take the PROJECTION MATRICES FOR THE SECOND IMAGE.
+    Matrix34 M1 = K * construct_Rt(R1, tr1);
+    Matrix34 M2 = K * construct_Rt(R1, tr2);
+    Matrix34 M3 = K * construct_Rt(R2, tr1);
+    Matrix34 M4 = K * construct_Rt(R2, tr2);
+//    // mutliply K with Rt and find the 3D points
+//    Matrix34 KR1t1 = K * R1t1;
+//    Matrix34 KR1t2 = K * R1t2;
+//    Matrix34 KR2t1 = K * R2t1;
+//    Matrix34 KR2t2 = K * R2t2;
 
-    //create projection matrix M for the first image
-    Matrix33 I = identity(3, 1);
-    Vector3D ti{0,0,0};
+    //create PROJECTION matrix M for the FIRST image.
+    Matrix33 I = identity(3, 1); // there is no rotation
+    Vector3D ti{0,0,0}; // there is no translation
     Matrix34 M0 = K * construct_Rt(I, ti);
 //    std::cout << "M0: " << M0 << std::endl;
 
-    std::vector<Vector3D> points_3d_1 = reconstruct3Dpoints(points_0, points_1, KR1t1,M0);
-    std::vector<Vector3D> points_3d_2 = reconstruct3Dpoints(points_0, points_1, KR1t2,M0);
-    std::vector<Vector3D> points_3d_3 = reconstruct3Dpoints(points_0, points_1, KR2t1,M0);
-    std::vector<Vector3D> points_3d_4 = reconstruct3Dpoints(points_0, points_1, KR2t2,M0);
+    // TODO: SOMETHING HERE MUGHT BE WRONG BECAUSE M0 IS NOT RECOGNISED. DO WE GET THE NORMALIZED POINTS OR THE INITIAL?
+    std::vector<Vector3D> points_3d_1 = reconstruct3Dpoints(points_0, points_1, M1, M0);
+    std::vector<Vector3D> points_3d_2 = reconstruct3Dpoints(points_0, points_1, M2, M0);
+    std::vector<Vector3D> points_3d_3 = reconstruct3Dpoints(points_0, points_1, M3, M0);
+    std::vector<Vector3D> points_3d_4 = reconstruct3Dpoints(points_0, points_1, M4, M0);
 
     // call the function to calculate the number of points in front of both images
     int c1 = count_positive_z(points_3d_1);
@@ -320,10 +269,10 @@ bool Triangulation::triangulation(
     int c4 = count_positive_z(points_3d_4);
 
     // printing statements to check the number of positive points
-//    std::cout << "c1: " << c1 << std::endl;
-//    std::cout << "c2: " << c2 << std::endl;
-//    std::cout << "c3: " << c3 << std::endl;
-//    std::cout << "c4: " << c4 << std::endl;
+    std::cout << "c1: " << c1 << std::endl;
+    std::cout << "c2: " << c2 << std::endl;
+    std::cout << "c3: " << c3 << std::endl;
+    std::cout << "c4: " << c4 << std::endl;
 
     // decide on the correct R and t and save it in the variables of the functions.
     if (c1 > c2 && c1 > c3 && c1 > c4){R = R1;t = tr1;points_3d = points_3d_1;}
@@ -355,25 +304,32 @@ bool Triangulation::triangulation(
 
 // function that returns the centroid of a vector that holds image points
 Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
-    unsigned int n0 = im_points.size(); // divide the sum with n and get the centroid
+    unsigned int n0 = im_points.size();
     double p0x = 0, p0y = 0, c0x, c0y;
     for (auto p0: im_points){
+        // compute the sum of all the x coords and all the y coords
         p0x = p0x + p0.x();
         p0y = p0y + p0.y();
     }
-    // The origin of our previous CRS is in the left corner so every point will be positive
-    // So the translation vector will be negative
+
+    // divide the sum with n and get the centroid --> origin of the new CRS
     c0x = p0x/n0;
     c0y = p0y/n0;
 
+    // The origin of our previous CRS is in the left corner so every point in the image measured from this CRS will be positive
+    // Accordinghly, the translation vector will be negative. Because it points from the new origin to the old CRS origin
     // translation vector
     Vector2D t0{-c0x,-c0y};
     // set up the scaling factor --> sqrt(2)/average_dist of the points to the new CRS origin
     double s0, adist0 = 0;
     for (auto p0: im_points){
-        adist0 = adist0 + sqrt(pow((p0.x() - c0x), 2) + pow((p0.y() - c0y), 2));
+        // sum all the distances, where the distance is the point's coordinates measured from the new origin x'= x+tx, y'=y+ty.
+        adist0 = adist0 + sqrt(pow((p0.x() + t0.x()), 2) + pow((p0.y() + t0.y()), 2));
     }
-    s0 = sqrt(2)/(adist0/n0);
+    // divide all the distances with the number of points to find the mean_dist
+    double min_dist = adist0/n0;
+    // define the scaling factor, same for x and y direction
+    s0 = sqrt(2)/min_dist;
 
     // prepare the Transformation matrix (T) for the image
     return {s0, 0, t0.x(), 0, s0, t0.y(), 0, 0, 1};
@@ -392,16 +348,16 @@ Matrix34 construct_Rt(const Matrix33& R, const Vector3D& t){
 
 std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt, const Matrix34& M0){
     // construct Matrix A
+    // Initialize a vector to hold the reconstructed 3D points.
     std::vector<Vector3D> points3d;
     const Matrix34& M1=KRt;
-    int count = 0;
     for (int i=0; i< img0.size(); i++) {
-        // compute the Matrix A
+        // compute the Matrix A, different for every pair of image points.
         Matrix44 A;
-        A.set_column(0, (img0[i].x() * M0.get_row(2) - M0.get_row(0)));
-        A.set_column(0, (img0[i].y() * M0.get_row(2) - M0.get_row(1)));
-        A.set_column(0, (img1[i].x() * M1.get_row(2) - M1.get_row(0)));
-        A.set_column(0, (img1[i].x() * M1.get_row(2) - M1.get_row(1)));
+        A.set_row(0, (img0[i].x() * M0.get_row(2) - M0.get_row(0)));
+        A.set_row(1, (img0[i].y() * M0.get_row(2) - M0.get_row(1)));
+        A.set_row(2, (img1[i].x() * M1.get_row(2) - M1.get_row(0)));
+        A.set_row(3, (img1[i].y() * M1.get_row(2) - M1.get_row(1)));
         Matrix44 U, S, V;
         Matrix Ua(4, 4, 0.0);
         Matrix Sa(4, 4, 0.0);
@@ -418,13 +374,7 @@ int count_positive_z(const std::vector<Vector3D>& points3d){
     int count = 0;
     for (auto p: points3d){
         if (p.z() > 0){
-//            // if positive z coord, go and check if the same point in the other image has also a positive coord and add 1 to the counter
-//            Vector4D X1 = inverse(KRt) * img1[i].homogeneous();
-//            Vector3D p1_3d = X1.cartesian();
-//            if (p1_3d.z() > 0){
-//                // add 1 to the counter if the corresponding points have positive coords
             count++;
-//            }
         }
     }
     return count;
