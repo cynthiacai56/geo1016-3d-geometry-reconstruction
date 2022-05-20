@@ -37,7 +37,7 @@ Matrix33 transf_matrix(const std::vector<Vector2D>& im_points);
 Matrix34 construct_Rt(const Matrix33& R, const Vector3D& t);
 int count_positive_z(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt);
 std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, const std::vector<Vector2D>& img1, const Matrix34& KRt, const Matrix34& M0);
-int count_positive_z(const std::vector<Vector3D>& points3d);
+int count_positive_z(const std::vector<Vector3D>& points3d, const Matrix33& R, const Vector3D &t);
 
 
 
@@ -101,7 +101,8 @@ bool Triangulation::triangulation(
     // 2. Scaling: We scale the points with a scale factor of sqrt(2)/mean_distance
     Matrix33 T0 = transf_matrix(points_0);
     Matrix33 T1 = transf_matrix(points_1);
-    //    std::cout << "T0: " << T0 << std::endl;
+    std::cout << "T0: " << T0 << std::endl;
+    std::cout << "T1: " << T1 << std::endl;
 
     // create the structures to hold the NORMALIZED POINTS.
     std::vector<Vector2D> norm_points_0; /// input: 2D image points in the 1st image.
@@ -134,7 +135,7 @@ bool Triangulation::triangulation(
         // select the elements
         Vector2D q1 = norm_points_1[i];
         Vector2D q0 = norm_points_0[i];
-        W.set_row(i, {q0.x()*q1.x(), q0.x()*q1.x(), q1.x(), q0.x()*q0.y(), q0.y()*q1.y(), q1.y(), q0.x(), q0.y(), 1});
+        W.set_row(i, {q0.x()*q1.x(), q0.y()*q1.x(), q1.x(), q0.x()*q1.y(), q0.y()*q1.y(), q1.y(), q0.x(), q0.y(), 1});
     }
     //std::cout << "W: " << W << std::endl;
     //Compute the SVD decomposition of W
@@ -178,10 +179,11 @@ bool Triangulation::triangulation(
 
     // Last step: DENORMALIZATION Fq to be F. F = T′TFqT
     Matrix33 F = T1.transpose() * Fq * T0;
-    //std::cout << "F: \n" << F << std::endl;
+//    std::cout << "F: \n" << F << std::endl;
 
     // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
     // we take the last element and divide everything with that
+    // We do this to have comparable results.
     F = F / F[2][2];
 //    std::cout << "F: \n" << F << std::endl;
 
@@ -189,7 +191,9 @@ bool Triangulation::triangulation(
     // TODO step 2: compute the essential matrix E; E = KTFK
 
     // consruct the K matrix --> same for both cameras, but no skew parameter
-    Matrix33 K(fx, 0, cx, 0, fy, cy, 0, 0, 1);
+    Matrix33 K(fx, 0, cx,
+               0, fy, cy,
+               0, 0, 1);
     //std::cout << "K: \n" << K << std::endl;
 
     Matrix33 E = K.transpose() * F * K;  // 5 degrees of freedom --> it encodes R, and t (extrinsics).
@@ -197,8 +201,13 @@ bool Triangulation::triangulation(
 
     // Decomposition of E into R and t.
     // we define two matrices that we will use in the decomposition of E --> W and Z
-    Matrix33 We(0,-1,0,1,0,0,0,0,1);
-    Matrix33 Ze(0,1,0,-1,0,0,0,0,0);
+    Matrix33 We(0,-1,0,
+                1,0,0,
+                0,0,1);
+
+    Matrix33 Ze(0,1,0,
+                -1,0,0,
+                0,0,0);
 
     // get the matrices ready for the decomposition of E
     Matrix Ue(3, 3, 0.0);
@@ -215,6 +224,7 @@ bool Triangulation::triangulation(
     // Step 3.1: Recover t first (translation vector) as the third column of U
     Vector3D tr1 = Ue.get_column(2);
     Vector3D tr2 = -tr1;
+    std::cout << "t1: "<<tr1<<std::endl;
     // INTERMEDIATE CHECK for t: we can find directly t vector from the U Matrix. t = +- u3 (third column of U)
     // alternative computation of tr (translation vector)
 //    Matrix33 tr = Ue * Ze * Ue.transpose();
@@ -223,17 +233,28 @@ bool Triangulation::triangulation(
     // Step 3.2: Recover the Rotation Matrix R:
     // recover the first possible R. R1.
     Matrix33 R1 = Ue * We * Ve.transpose();
+    if (determinant(R1) < 0){
+        R1 = -R1;
+    }
+
+
+    std::cout << "R1: "<<R1<<std::endl;
     // We check that the determinant of R = 1 (within a tiny threshold)
-    if (!(determinant(R1) < 1.00001 && determinant(R1) > (1 - 0.00001))){
+    if (determinant(R1) > 1.00001 || determinant(R1) < (1 - 0.00001)){
         std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
         exit(20);
     }
     // compute the alternative for R. R2.
     Matrix33 R2 = Ue * We.transpose() * Ve.transpose();
-    if (!(determinant(R2) < 1.00001 && determinant(R2) > (1 - 0.00001))){
+    if (determinant(R2) < 0){
+        R2 = -R2;
+    }
+    if (determinant(R2) > 1.00001 || determinant(R2) < (1 - 0.00001)){
         std::cout << "exit the code --> the determinant of R matrix is wrong. " << std::endl;
         exit(20);
     }
+
+
 
 
     // TODO: Reconstruct 3D points. The main task is
@@ -263,10 +284,10 @@ bool Triangulation::triangulation(
     std::vector<Vector3D> points_3d_4 = reconstruct3Dpoints(points_0, points_1, M4, M0);
 
     // call the function to calculate the number of points in front of both images
-    int c1 = count_positive_z(points_3d_1);
-    int c2 = count_positive_z(points_3d_2);
-    int c3 = count_positive_z(points_3d_3);
-    int c4 = count_positive_z(points_3d_4);
+    int c1 = count_positive_z(points_3d_1, R1, tr1);
+    int c2 = count_positive_z(points_3d_2, R1, tr2);
+    int c3 = count_positive_z(points_3d_3, R2, tr1);
+    int c4 = count_positive_z(points_3d_4, R2, tr2);
 
     // printing statements to check the number of positive points
     std::cout << "c1: " << c1 << std::endl;
@@ -279,11 +300,6 @@ bool Triangulation::triangulation(
     if (c2 > c1 && c2 > c3 && c2 > c4){R = R1;t = tr2;points_3d = points_3d_2;}
     if (c3 > c2 && c3 > c1 && c3 > c4){R = R2;t = tr1;points_3d = points_3d_3;}
     if (c4 > c2 && c4 > c3 && c4 > c1){R = R2;t = tr2;points_3d = points_3d_4;}
-
-
-
-
-
 
 
     // TODO: Don't forget to
@@ -332,7 +348,13 @@ Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
     s0 = sqrt(2)/min_dist;
 
     // prepare the Transformation matrix (T) for the image
-    return {s0, 0, t0.x(), 0, s0, t0.y(), 0, 0, 1};
+    double s0x = s0*t0.x();
+    double s0y = s0*t0.y();
+    return {
+        s0, 0, s0x,
+        0, s0, s0y,
+        0, 0, 1
+    };
 }
 
 Matrix34 construct_Rt(const Matrix33& R, const Vector3D& t){
@@ -358,7 +380,7 @@ std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, con
         A.set_row(1, (img0[i].y() * M0.get_row(2) - M0.get_row(1)));
         A.set_row(2, (img1[i].x() * M1.get_row(2) - M1.get_row(0)));
         A.set_row(3, (img1[i].y() * M1.get_row(2) - M1.get_row(1)));
-        Matrix44 U, S, V;
+//        Matrix44 U, S, V;
         Matrix Ua(4, 4, 0.0);
         Matrix Sa(4, 4, 0.0);
         Matrix Va(4, 4, 0.0);
@@ -370,11 +392,24 @@ std::vector<Vector3D> reconstruct3Dpoints(const std::vector<Vector2D>& img0, con
     return points3d;
 }
 
-int count_positive_z(const std::vector<Vector3D>& points3d){
+int count_positive_z(const std::vector<Vector3D>& points3d, const Matrix33& R, const Vector3D &t){
     int count = 0;
     for (auto p: points3d){
         if (p.z() > 0){
-            count++;
+            /*** these 3D points are reconstructed with respect to the first camera's CRS (the Wolrd)
+            we need to compute the 3D points with respect to the second camera
+            for this, we first Rotate and then translate  ***/
+            // construct the transformation matrix. Translation first, Rotation second.
+            Matrix34 Rt;
+            Rt.set_column(0, R.get_column(0));
+            Rt.set_column(1, R.get_column(1));
+            Rt.set_column(2, R.get_column(2));
+            Rt.set_column(3, t);
+            Vector4D p1_homo = Rt * p.homogeneous() ;
+            Vector3D p1 = p1_homo.cartesian();
+            if (p1.z() > 0){
+                count++;
+            }
         }
     }
     return count;
