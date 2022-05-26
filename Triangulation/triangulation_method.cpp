@@ -179,7 +179,7 @@ bool Triangulation::triangulation(
 
     // Last step: DENORMALIZATION Fq to be F. F = T′TFqT
     Matrix33 F = T1.transpose() * Fq * T0;
-//    std::cout << "F: \n" << F << std::endl;
+    std::cout << "F: \n" << F << std::endl;
 
     // TODO: Intermediate step - The recovered F is up to scale. Please scale F such that F(2, 2) = 1.0 after denormalization.
     // we take the last element and divide everything with that
@@ -255,8 +255,6 @@ bool Triangulation::triangulation(
     }
 
 
-
-
     // TODO: Reconstruct 3D points. The main task is
     //      - triangulate a pair of image points (i.e., compute the 3D coordinates for each corresponding point pair)
 
@@ -277,7 +275,7 @@ bool Triangulation::triangulation(
     Matrix34 M0 = K * construct_Rt(I, ti);
 //    std::cout << "M0: " << M0 << std::endl;
 
-    // TODO: SOMETHING HERE MUGHT BE WRONG BECAUSE M0 IS NOT RECOGNISED. DO WE GET THE NORMALIZED POINTS OR THE INITIAL?
+    // The reconstructed points from the 4 different cases
     std::vector<Vector3D> points_3d_1 = reconstruct3Dpoints(points_0, points_1, M1, M0);
     std::vector<Vector3D> points_3d_2 = reconstruct3Dpoints(points_0, points_1, M2, M0);
     std::vector<Vector3D> points_3d_3 = reconstruct3Dpoints(points_0, points_1, M3, M0);
@@ -290,16 +288,47 @@ bool Triangulation::triangulation(
     int c4 = count_positive_z(points_3d_4, R2, tr2);
 
     // printing statements to check the number of positive points
-    std::cout << "c1: " << c1 << std::endl;
-    std::cout << "c2: " << c2 << std::endl;
-    std::cout << "c3: " << c3 << std::endl;
-    std::cout << "c4: " << c4 << std::endl;
+//    std::cout << "c1: " << c1 << std::endl;
+//    std::cout << "c2: " << c2 << std::endl;
+//    std::cout << "c3: " << c3 << std::endl;
+//    std::cout << "c4: " << c4 << std::endl;
 
     // decide on the correct R and t and save it in the variables of the functions.
     if (c1 > c2 && c1 > c3 && c1 > c4){R = R1;t = tr1;points_3d = points_3d_1;}
     if (c2 > c1 && c2 > c3 && c2 > c4){R = R1;t = tr2;points_3d = points_3d_2;}
     if (c3 > c2 && c3 > c1 && c3 > c4){R = R2;t = tr1;points_3d = points_3d_3;}
     if (c4 > c2 && c4 > c3 && c4 > c1){R = R2;t = tr2;points_3d = points_3d_4;}
+
+
+    // TODO: Evaluation Method
+    /*
+     * We will compute the image coordinates of the two images based on their Projection matrices (p= M*P)
+     * and then we will calculate the differences with the initial 2d coordinates
+     * for camera 0: the projection matrix is M0, for camera 1: the projection is M1 = [R|t]
+     */
+
+
+    std::cout << "coordinates of 2D point for image 0: " << std::endl;
+    for (const auto& p0: points_3d){
+        Vector4D q0 = p0.homogeneous();
+        //points_2d_new.emplace_back(M*p);
+        Vector3D v0 = M0 * q0; // M is 3 by 4
+        Vector2D w0 = v0.cartesian();
+        //std::cout << w0 << std::endl;
+    }
+
+    Matrix34 M1_final = K * construct_Rt(R, t); // Projection matrix of the second camera
+
+    // Validation of the points obtained from the second camera
+    std::cout << "coordinates of 2D point for image 1: " << std::endl;
+    for (const auto& p1: points_3d){
+        Vector4D q1 = p1.homogeneous();
+        //points_2d_new.emplace_back(M*p);
+        Vector3D v1 = M1_final * q1; // M is 3 by 4
+        Vector2D w1 = v1.cartesian();
+        //std::cout << w1 << std::endl;
+    }
+
 
 
     // TODO: Don't forget to
@@ -348,11 +377,9 @@ Matrix33 transf_matrix(const std::vector<Vector2D>& im_points){
     s0 = sqrt(2)/min_dist;
 
     // prepare the Transformation matrix (T) for the image
-    double s0x = s0*t0.x();
-    double s0y = s0*t0.y();
     return {
-        s0, 0, s0x,
-        0, s0, s0y,
+        s0, 0, s0*t0.x(),
+        0, s0, s0*t0.y(),
         0, 0, 1
     };
 }
