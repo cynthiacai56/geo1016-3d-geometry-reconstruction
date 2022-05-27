@@ -1,4 +1,4 @@
-# What the algorithm is
+# Problem statement
 
 The task is to reconstruct the 3D geometry of points by a set of point correspondences between two images. 
 
