@@ -1,4 +1,4 @@
-# geo1016_A2: Triangulation
+# What the algorithm is
 
 The task is to reconstruct the 3D geometry of points by a set of point correspondences between two images. 
 
