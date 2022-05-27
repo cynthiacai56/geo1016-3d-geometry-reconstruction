@@ -1,6 +1,13 @@
-# geo1016_A2
+# geo1016_A2: Triangulation
 
-Theme: Triangulation
+In this assignment, we were provided with a code skeleton and we were asked to implement the triangulation function, so that in the end we would be able to reconstruct the 3D geometry of points by a set of point correspondences between two images. 
+
+The goal of the triangulation method function is to compute the Fundamental F and Essential E matrices and subsequently decompose E into a rotation matrix R and a skew-symmetric matrix [t]x, that describe the relative pose of the cameras, using a set of known correspondences between two images. Once we obtain these, we proceed with the 3D reconstruction using the linear method for triangulation. 
+
+
+# General information
 Author: Ioanna Panagiotidou, Irina Gheorghiu, Cynthia Cai
+
 Supervisor: Liangliang Nan
-Date: May, 2022
+
+Date: May 27, 2022
